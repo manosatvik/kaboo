@@ -10,6 +10,7 @@ const { Game } = require('./game');
 const PORT = process.env.PORT || 3000;
 const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
 const IDLE_TABLE_MS = 3 * 60 * 60 * 1000; // forget tables nobody has touched for 3 hours
+const TURN_TIMEOUT_MS = 60 * 1000; // auto-skip a turn after a minute of no activity from the player
 
 const tables = new Map(); // code -> { game, socks:Set<ws>, touched }
 
@@ -54,6 +55,14 @@ function broadcast(t) {
 }
 function send(ws, msg) { if (ws.readyState === 1) ws.send(JSON.stringify(msg)); }
 
+// Resets a table's turn clock whenever the turn actually moves, the game
+// enters/leaves 'play', or the player on the clock is the one who just acted.
+function noteTurnActivity(t, priorTn, priorPh, actedIdx) {
+  if (t.game.ph === 'play' && (t.game.tn !== priorTn || t.game.ph !== priorPh || actedIdx === priorTn)) {
+    t.turnAt = Date.now();
+  }
+}
+
 wss.on('connection', ws => {
   ws.alive = true;
   ws.on('pong', () => { ws.alive = true; });
@@ -71,10 +80,11 @@ wss.on('connection', ws => {
       let code = typeof m.table === 'string' ? m.table.toUpperCase() : '';
       if (m.create) {
         code = newCode();
-        tables.set(code, { game: new Game(ws.pid), socks: new Set(), touched: Date.now() });
+        tables.set(code, { game: new Game(ws.pid), socks: new Set(), touched: Date.now(), turnAt: Date.now() });
       }
       const t = tables.get(code);
       if (!t) return send(ws, { type: 'error', msg: 'That table does not exist any more. Open a new one.', code: 'no_table' });
+      if (t.game.isBanned(ws.pid)) return send(ws, { type: 'error', msg: 'The host removed you from this table.', code: 'kicked' });
       if (ws.table && ws.table !== code) { const old = tables.get(ws.table); if (old) { old.socks.delete(ws); broadcast(old); } }
       ws.table = code;
       t.socks.add(ws);
@@ -87,7 +97,9 @@ wss.on('connection', ws => {
       const t = ws.table && tables.get(ws.table);
       if (!t || !ws.pid) return;
       t.touched = Date.now();
+      const priorTn = t.game.tn, priorPh = t.game.ph, actedIdx = t.game.idx(ws.pid);
       try { t.game.apply(ws.pid, m.a, effHost(t) === ws.pid); } catch (e) { console.error(e); }
+      noteTurnActivity(t, priorTn, priorPh, actedIdx);
       return broadcast(t);
     }
   });
@@ -107,5 +119,21 @@ setInterval(() => {
   const now = Date.now();
   for (const [code, t] of tables) if (!t.socks.size && now - t.touched > IDLE_TABLE_MS) tables.delete(code);
 }, 30000);
+
+// Skip a player's turn if they have not acted in TURN_TIMEOUT_MS, whether or not they are online.
+setInterval(() => {
+  const now = Date.now();
+  for (const t of tables.values()) {
+    if (t.game.ph !== 'play') continue;
+    if (!t.turnAt) { t.turnAt = now; continue; }
+    if (now - t.turnAt <= TURN_TIMEOUT_MS) continue;
+    const actor = t.game.pl[0] && t.game.pl[0].id; // only used to satisfy apply()'s seated-player check; isHost is forced below
+    if (!actor) continue;
+    const priorTn = t.game.tn, priorPh = t.game.ph;
+    t.game.apply(actor, { t: 'skipturn', tn: t.game.tn, auto: 1 }, true);
+    noteTurnActivity(t, priorTn, priorPh, -1);
+    broadcast(t);
+  }
+}, 5000);
 
 server.listen(PORT, () => console.log('Kaboo is running on http://localhost:' + PORT));

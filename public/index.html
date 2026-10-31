@@ -57,6 +57,9 @@ label.tog input{margin-top:4px;accent-color:var(--gold)}
 .tag{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;border-radius:6px;background:rgba(236,230,214,.1);color:var(--muted);flex:none}
 .tag.gold{background:var(--gold);color:var(--gold-ink)}
 .tag.red{background:var(--card-red);color:var(--card)}
+.btn.sm{padding:4px 8px;font-size:12px;border-radius:8px}
+.btn.danger{background:rgba(184,50,42,.14);border-color:rgba(184,50,42,.5);color:var(--bad)}
+.btn.danger:hover{background:rgba(184,50,42,.26)}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--good);flex:none}
 .dot.away{background:var(--muted);opacity:.5}
 .opps{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
@@ -233,10 +236,12 @@ function handHTML(p){
 function seatHTML(p,mine){
   var P=S.pl[p],tags='';
   if(P.host)tags+='<span class="tag">Host</span>';
+  if(P.kk)tags+='<span class="tag red">Kicked</span>';
   if(S.kb&&S.kb.by===p)tags+='<span class="tag red">Kaboo</span>';
   if(S.kb&&S.kb.ctr.indexOf(p)>=0)tags+='<span class="tag red">Counter</span>';
-  if(S.ph==='peek'&&P.r)tags+='<span class="tag">Ready</span>';
+  if(S.ph==='peek'&&P.r&&!P.kk)tags+='<span class="tag">Ready</span>';
   if(mine&&S.op.mem&&S.ph==='play')tags+='<button class="btn eye'+(ui.mem?' on':'')+'" data-act="mem" aria-pressed="'+(ui.mem?'true':'false')+'" title="Show the cards you have seen">'+EYE+(ui.mem?'Hide':'Seen')+'</button>';
+  if(!mine&&!P.kk&&amHost())tags+='<button class="btn sm danger" data-act="kick" data-p="'+p+'">Kick</button>';
   return'<section class="seat'+(mine?' mine':'')+(S.ph==='play'&&S.tn===p?' turn':'')+'"><div class="who"><span class="dot'+(P.on?'':' away')+'"></span><span class="n">'+esc(P.nm)+(mine?' (you)':'')+'</span>'+tags+'<span class="pts">'+P.s+' pts</span></div>'+handHTML(p)+'</section>';
 }
 function logHTML(){return'<ol class="log" aria-live="polite">'+(S.lg||[]).map(function(x){return'<li>'+esc(x)+'</li>'}).join('')+'</ol>'}
@@ -253,6 +258,11 @@ function render(){
   if(document.activeElement!==ni&&!ni.value)ni.value=myName;
   if(S){var key=S.rd+'-'+S.tn+'-'+S.st+'-'+S.ph;if(key!==ui.key){ui.key=key;ui.sel=[]}if(!canSnap())ui.snap=false}
 
+  if(err&&err.code==='kicked'){
+    sf.hidden=true;jf.hidden=true;
+    view.innerHTML='<div class="panel"><h2>Removed from table</h2><p>'+esc(err.msg)+' Open a new table or ask the host for a fresh invite link.</p></div>';
+    return;
+  }
   if(!code||(err&&err.code==='no_table')){
     sf.hidden=false;jf.hidden=false;
     $('#seatTitle').textContent='Open a table';
@@ -262,6 +272,7 @@ function render(){
   }
   jf.hidden=true;
   if(!S){sf.hidden=true;view.innerHTML='<div class="panel"><h2>Joining table '+esc(code)+'…</h2><p>'+(status==='offline'?'Cannot reach the server. Retrying.':'Connecting to the game server. A free host can take up to a minute to wake up.')+'</p></div>';return}
+  if(S.kicked){sf.hidden=true;view.innerHTML='<div class="panel"><h2>Removed from table</h2><p>The host removed you from this table. Open a new table or ask the host for a fresh invite link.</p></div>';return}
   var mi=me();
   sf.hidden=!(mi<0&&(S.ph==='lobby'||S.ph==='end')&&S.pl.length<8);
   $('#seatTitle').textContent='Take a seat';
@@ -273,7 +284,7 @@ function render(){
 }
 function lobbyHTML(){
   var mi=me(),host=amHost();
-  var seats='<ul class="seats">'+S.pl.map(function(p){return'<li><span class="dot'+(p.on?'':' away')+'"></span><span class="n">'+esc(p.nm)+'</span>'+(p.host?'<span class="tag gold">Host</span>':'')+(p.me?'<span class="tag">You</span>':'')+'</li>'}).join('')+'</ul>';
+  var seats='<ul class="seats">'+S.pl.map(function(p,pi){return'<li><span class="dot'+(p.on?'':' away')+'"></span><span class="n">'+esc(p.nm)+'</span>'+(p.host?'<span class="tag gold">Host</span>':'')+(p.me?'<span class="tag">You</span>':'')+(host&&!p.me?'<button class="btn sm danger" data-act="kick" data-p="'+pi+'" style="margin-left:auto">Kick</button>':'')+'</li>'}).join('')+'</ul>';
   var h='<div class="panel stack"><div><h2>Invite your friends</h2><p>Send this link. Anyone who opens it can sit down.</p></div><div class="row"><span class="link" id="inviteLink">'+esc(inviteURL())+'</span><button class="btn" data-act="copy">Copy link</button></div></div>';
   h+='<div class="panel stack"><div><h2>Waiting for players</h2><p>Kaboo needs 2 to 8 players. '+S.pl.length+' seated.</p></div>'+seats;
   if(host){
@@ -384,6 +395,10 @@ document.addEventListener('click',function(e){
     case 'snapcancel':ui.snap=false;render();break;
     case 'mem':ui.mem=!ui.mem;render();break;
     case 'skipturn':send({t:'skipturn',tn:S.tn});break;
+    case 'kick':
+      var kp=+b.dataset.p;
+      if(confirm('Remove '+nm(kp)+' from the table? They will not be able to rejoin.'))send({t:'kick',p:kp});
+      break;
     case 'copy':
       var url=inviteURL();
       if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(url).then(function(){b.textContent='Copied'},function(){selectLink()});else selectLink();

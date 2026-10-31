@@ -70,14 +70,32 @@ class Game {
     this.dr = null; this.df = '';  // drawn card, from 'd'eck or 'p'ile
     this.ef = null; this.rv = null; this.kb = null; this.sg = null;
     this.hl = []; this.lg = []; this.rd = 0; this.fs = 0; this.res = null;
+    this.bannedIds = new Set(); // players the host has kicked; they can never act or rejoin
   }
 
   idx(id) { return this.pl.findIndex(p => p.id === id); }
+  isBanned(id) { return this.bannedIds.has(id); }
   nm(i) { return this.pl[i] ? this.pl[i].nm : '?'; }
   log(m) { this.lg.push(m); if (this.lg.length > 8) this.lg.shift(); }
   where(s) { return this.nm(s[0]) + "'s " + slotName(s[1]); }
   okSlot(s) {
     return Array.isArray(s) && this.pl[s[0]] && s[1] >= 0 && s[1] < this.pl[s[0]].c.length && !!this.pl[s[0]].c[s[1]];
+  }
+  // Index of the next non-kicked seat after `from` (inclusive), wrapping around.
+  firstActive(from) {
+    const n = this.pl.length;
+    let i = from;
+    for (let k = 0; k < n; k++) {
+      if (!this.bannedIds.has(this.pl[i].id)) return i;
+      i = (i + 1) % n;
+    }
+    return from;
+  }
+  // Drop seats the host has kicked, once it is safe to reindex (lobby/end boundaries).
+  pruneKicked() {
+    if (!this.bannedIds.size) return;
+    this.pl = this.pl.filter(p => !this.bannedIds.has(p.id));
+    if (this.pl.length && !this.pl.some(p => p.id === this.host)) this.host = this.pl[0].id;
   }
   swapSlots(a, b) {
     const A = this.pl[a[0]].c, B = this.pl[b[0]].c;
@@ -112,6 +130,7 @@ class Game {
     return this.dk.pop() || null;
   }
   deal() {
+    this.pruneKicked();
     this.dk = mkDeck(this.op.jk); this.dp = []; this.kn = {};
     for (const p of this.pl) { p.c = [this.dk.pop(), this.dk.pop(), this.dk.pop(), this.dk.pop()]; p.r = 0; p.pk = 0; }
     this.rd++; this.ph = 'peek'; this.st = '';
@@ -126,8 +145,13 @@ class Game {
       if (cur !== this.kb.by) this.kb.left--;
       if (this.kb.left <= 0) { this.endRound(); return; }
     }
-    let nx = (cur + 1) % n;
-    if (this.kb && nx === this.kb.by) nx = (nx + 1) % n;
+    let nx = cur;
+    for (let i = 0; i < n; i++) {
+      nx = (nx + 1) % n;
+      if (this.kb && nx === this.kb.by) continue;
+      if (this.bannedIds.has(this.pl[nx].id)) continue;
+      break;
+    }
     this.tn = nx;
   }
   endRound() {
@@ -163,6 +187,32 @@ class Game {
   apply(id, a, isHost) {
     if (!a || typeof a.t !== 'string') return;
     const me = this.idx(id), t = a.t;
+    if (this.bannedIds.has(id)) return; // a kicked player can never act again at this table
+    if (t === 'kick' && isHost) {
+      const ti = Number.isInteger(a.p) ? a.p : -1;
+      if (ti < 0 || ti >= this.pl.length) return;
+      const tid = this.pl[ti].id;
+      if (tid === id || this.bannedIds.has(tid)) return;
+      this.bannedIds.add(tid);
+      this.log(this.nm(ti) + ' was removed by the host.');
+      if (this.ph === 'lobby' || this.ph === 'end') {
+        this.pl.splice(ti, 1);
+        if (this.res) this.res.splice(ti, 1);
+        if (this.host === tid && this.pl.length) this.host = this.pl[0].id;
+        return;
+      }
+      if (this.ph === 'peek') {
+        this.pl[ti].r = 1;
+        if (this.pl.every(p => p.r)) {
+          this.ph = 'play'; this.tn = this.firstActive(this.fs); this.st = 'start';
+          this.log('Everyone has looked. ' + this.nm(this.tn) + ' goes first.');
+        }
+        return;
+      }
+      if (this.sg && this.sg.by === ti) this.sg = null;
+      if (ti === this.tn) { if (this.dr) this.dp.push(this.dr); this.endTurn(); }
+      return;
+    }
     if (t === 'join') {
       const n = clean(a.nm) || 'Player';
       if (me >= 0) { this.pl[me].nm = n; return; }
@@ -182,9 +232,10 @@ class Game {
     }
     if (t === 'opts' && isHost && this.ph === 'lobby') { this.op = { jk: !!a.jk, pr: !!a.pr, mem: !!a.mem }; return; }
     if (t === 'start' && isHost && this.ph === 'lobby' && this.pl.length >= 2) { this.deal(); return; }
-    if (t === 'next' && isHost && this.ph === 'end' && this.pl.length >= 2) { this.deal(); return; }
+    if (t === 'next' && isHost && this.ph === 'end' && this.pl.filter(p => !this.bannedIds.has(p.id)).length >= 2) { this.deal(); return; }
     if (t === 'reset' && isHost && this.ph === 'end') {
       this.ph = 'lobby';
+      this.pruneKicked();
       for (const p of this.pl) { p.s = 0; p.c = []; p.r = 0; p.pk = 0; }
       this.rd = 0; this.res = null; this.kb = null; this.hl = []; this.dk = []; this.dp = [];
       this.log('New game. Scores are back to 0.');
@@ -196,7 +247,7 @@ class Game {
       if (t === 'ready') {
         this.pl[me].r = 1;
         if (this.pl.every(p => p.r)) {
-          this.ph = 'play'; this.tn = this.fs; this.st = 'start';
+          this.ph = 'play'; this.tn = this.firstActive(this.fs); this.st = 'start';
           this.log('Everyone has looked. ' + this.nm(this.tn) + ' goes first.');
         }
       }
@@ -208,7 +259,7 @@ class Game {
     if (t === 'nogive') { if (this.sg && this.sg.by === me) { this.sg = null; this.log(this.nm(me) + ' kept their cards.'); } return; }
     if (t === 'skipturn' && isHost && a.tn === this.tn) {
       if (this.dr) this.dp.push(this.dr);
-      this.log(this.nm(this.tn) + "'s turn was skipped.");
+      this.log(this.nm(this.tn) + "'s turn was skipped" + (a.auto ? ' (no activity for a minute).' : '.'));
       this.endTurn();
       return;
     }
@@ -347,6 +398,7 @@ class Game {
     const inRv = (p, i) => this.rv && this.rv.to === id && this.rv.s.some(s => s[0] === p && s[1] === i);
     const pl = this.pl.map((p, pi) => ({
       id: p.id === id ? id : 'p' + pi, me: p.id === id, nm: p.nm, s: p.s, r: p.r, on: online.has(p.id), host: p.id === hostId,
+      kk: this.bannedIds.has(p.id),
       c: p.c.map((c, i) => {
         if (!c) return null;
         if (this.ph === 'end') return c;
@@ -363,6 +415,7 @@ class Game {
       top: this.dp.length ? this.dp[this.dp.length - 1] : null, dpn: this.dp.length, dkn: this.dk.length,
       pk: me >= 0 ? this.pl[me].pk : 0,
       mem: this.op.mem && this.ph === 'play' ? this.memoryOf(id) : [],
+      kicked: this.bannedIds.has(id),
     };
   }
   // Cards this player has seen and could still be tracking, as [p, i, card].
