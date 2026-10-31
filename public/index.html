@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Kaboo</title>
+<meta name="description" content="Play Kaboo, the memory card game, with 2 to 8 friends. Open a table and share the link.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+/* A card table: opponents across the top, piles in the middle, your 2x2 square at the bottom, actions in a sticky rail. */
+:root{
+  color-scheme:dark;
+  --felt:#0f2135;--felt-2:#173251;--rail:#0a1626;--ink:#ece6d6;--muted:#97a9bd;
+  --card:#f5eedd;--card-ink:#1e1c25;--card-red:#b8322a;--back:#1d4069;
+  --gold:#f0b43c;--gold-ink:#2b1d04;--line:rgba(236,230,214,.16);--good:#7bd3a0;--bad:#ff9282;
+  --f-display:'Unbounded','Arial Black',system-ui,sans-serif;
+  --f-body:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --cw:clamp(58px,17vw,84px);--mw:clamp(30px,7.5vw,40px);
+}
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--felt);background-image:radial-gradient(120% 80% at 50% 35%,var(--felt-2),var(--felt) 70%);background-attachment:fixed;color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;min-height:100vh}
+[hidden]{display:none!important}
+.wrap{max-width:980px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px 40px;display:flex;flex-direction:column;gap:16px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.mark{font-family:var(--f-display);font-weight:900;font-size:clamp(26px,6vw,36px);letter-spacing:.04em;margin:0;line-height:1}
+.mark a{color:inherit;text-decoration:none}
+.mark span{color:var(--gold)}
+.chips{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chip{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted);font-variant-numeric:tabular-nums}
+.chip.live{color:var(--good);border-color:rgba(123,211,160,.4)}
+.chip.off{color:var(--bad);border-color:rgba(255,146,130,.4)}
+button{font:inherit;color:inherit}
+.btn{font-family:var(--f-body);font-weight:700;font-size:14px;padding:10px 16px;border-radius:10px;border:1px solid var(--line);background:rgba(236,230,214,.06);color:var(--ink);cursor:pointer;transition:background .15s,transform .1s}
+.btn:hover{background:rgba(236,230,214,.12)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.primary{background:var(--gold);color:var(--gold-ink);border-color:var(--gold)}
+.btn.kaboo{font-family:var(--f-display);font-weight:900;letter-spacing:.06em;background:var(--card-red);border-color:var(--card-red);color:var(--card)}
+.btn:focus-visible,.card:focus-visible,input:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.panel{background:rgba(10,22,38,.55);border:1px solid var(--line);border-radius:16px;padding:18px}
+.panel h2{font-family:var(--f-display);font-weight:700;font-size:18px;margin:0 0 6px;text-wrap:balance}
+.panel p{margin:0;color:var(--muted);max-width:62ch}
+.stack{display:flex;flex-direction:column;gap:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input[type=text]{font:inherit;font-weight:600;background:var(--rail);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0;width:220px;max-width:100%}
+input.code{text-transform:uppercase;letter-spacing:.2em;width:130px;font-family:var(--f-display)}
+.link{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:var(--rail);border:1px solid var(--line);border-radius:10px;padding:10px 12px;overflow-wrap:anywhere;user-select:all;flex:1 1 240px;min-width:0}
+label.tog{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+label.tog small{display:block;color:var(--muted)}
+label.tog input{margin-top:4px;accent-color:var(--gold)}
+.seats{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;list-style:none;margin:0;padding:0}
+.seats li{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;background:rgba(236,230,214,.05);border:1px solid var(--line);font-weight:600;min-width:0}
+.n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;border-radius:6px;background:rgba(236,230,214,.1);color:var(--muted);flex:none}
+.tag.gold{background:var(--gold);color:var(--gold-ink)}
+.tag.red{background:var(--card-red);color:var(--card)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--good);flex:none}
+.dot.away{background:var(--muted);opacity:.5}
+.opps{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.seat{border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:rgba(10,22,38,.4);display:flex;flex-direction:column;gap:8px;min-width:0;transition:box-shadow .2s,border-color .2s}
+.seat.turn{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 0 24px -6px var(--gold)}
+.who{display:flex;align-items:center;gap:6px;font-weight:700;min-width:0}
+.who .pts{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--muted);font-weight:600;font-size:13px;flex:none}
+.hand{display:grid;grid-template-columns:repeat(2,max-content);gap:6px;justify-content:center}
+.opps .hand{--cw:var(--mw);gap:5px}
+.mine .hand{gap:10px}
+.mine{align-self:center;min-width:min(100%,280px)}
+.center{display:flex;justify-content:center;align-items:flex-end;gap:clamp(14px,5vw,40px);padding:6px 0;flex-wrap:wrap}
+.pile{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-variant-numeric:tabular-nums}
+.stackc{position:relative}
+.stackc::before{content:"";position:absolute;inset:0;transform:translate(4px,4px);border-radius:calc(var(--cw)*.1);background:var(--rail);opacity:.7}
+.stackc>*{position:relative}
+.card{width:var(--cw);aspect-ratio:5/7;border-radius:calc(var(--cw)*.1);position:relative;display:grid;place-items:center;border:0;padding:0;font-family:var(--f-display);user-select:none;transition:transform .12s,box-shadow .15s;flex:none}
+.card.face{background:var(--card);color:var(--card-ink);box-shadow:0 2px 0 rgba(0,0,0,.25),inset 0 0 0 1px rgba(0,0,0,.08)}
+.card.face.red{color:var(--card-red)}
+.card .r{position:absolute;top:6%;left:9%;font-size:calc(var(--cw)*.24);font-weight:700;line-height:1;letter-spacing:-.04em}
+.card .r.b{top:auto;left:auto;bottom:6%;right:9%;transform:rotate(180deg)}
+.card .s{font-family:var(--f-body);font-size:calc(var(--cw)*.44);line-height:1}
+.card .v{position:absolute;bottom:-1.5em;left:0;right:0;text-align:center;font-family:var(--f-body);font-size:11px;color:var(--muted);font-weight:600}
+.card.back{background:var(--back);background-image:repeating-linear-gradient(45deg,rgba(240,180,60,.55) 0 1.5px,transparent 1.5px 7px),repeating-linear-gradient(-45deg,rgba(240,180,60,.3) 0 1.5px,transparent 1.5px 7px);box-shadow:inset 0 0 0 3px var(--card),inset 0 0 0 5px var(--back),0 2px 0 rgba(0,0,0,.3)}
+.card.back b{font-family:var(--f-display);font-weight:900;font-size:calc(var(--cw)*.2);color:var(--card);background:var(--back);padding:2px 4px;border-radius:4px}
+.card.face.memo{background:rgba(245,238,221,.82);box-shadow:0 0 0 2px var(--back),0 0 0 4px rgba(240,180,60,.7)}
+.btn.eye{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;font-size:12px;border-radius:8px;flex:none}
+.btn.eye.on{background:var(--gold);color:var(--gold-ink);border-color:var(--gold)}
+.card.empty{background:transparent;border:2px dashed var(--line);box-shadow:none}
+.card.click{cursor:pointer}
+.card.click:hover{transform:translateY(-4px)}
+.card.hl{box-shadow:0 0 0 2px rgba(240,180,60,.6),0 2px 0 rgba(0,0,0,.3)}
+.card.back.hl{box-shadow:inset 0 0 0 3px var(--card),inset 0 0 0 5px var(--back),0 0 0 2px rgba(240,180,60,.6)}
+.card.sel,.card.back.sel{box-shadow:0 0 0 4px var(--gold),0 6px 18px rgba(0,0,0,.4);transform:translateY(-4px)}
+.snapmode .card.click{animation:wob 1s ease-in-out infinite}
+@keyframes wob{50%{transform:translateY(-3px)}}
+@media (prefers-reduced-motion:reduce){.card,.btn{transition:none}.snapmode .card.click{animation:none}}
+.bar{position:sticky;bottom:0;z-index:5;background:var(--rail);border:1px solid var(--line);border-radius:16px;padding:14px 16px calc(14px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:10px;box-shadow:0 -10px 30px rgba(0,0,0,.35)}
+.bar .msg{font-weight:600;text-wrap:pretty}
+.bar .msg em{font-style:normal;color:var(--gold)}
+.kbanner{font-family:var(--f-display);font-weight:900;letter-spacing:.08em;color:var(--card-red);background:var(--card);border-radius:10px;padding:6px 12px;text-align:center;font-size:14px}
+.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.log li:last-child{color:var(--ink)}
+.results{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.results th,.results td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+.results th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.results .num{text-align:right}
+.results tr.win td{color:var(--gold);font-weight:700}
+.tablewrap{overflow-x:auto}
+details.rules{border-top:1px solid var(--line);padding-top:12px;color:var(--muted)}
+details.rules summary{cursor:pointer;font-weight:700;color:var(--ink)}
+details.rules ul{padding-left:18px;margin:8px 0;max-width:68ch}
+details.rules li{margin:4px 0}
+.vals{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.vals span{font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 class="mark"><a href="/">KA<span>BOO</span></a></h1>
+    <div class="chips"><span class="chip" id="tableChip" hidden></span><span class="chip" id="round" hidden></span><span class="chip" id="status">Connecting</span></div>
+  </header>
+
+  <form class="panel stack" id="seatForm" hidden>
+    <div><h2 id="seatTitle">Take a seat</h2><p id="seatSub">Pick a name the other players will see.</p></div>
+    <div class="row">
+      <input type="text" id="nameInput" maxlength="14" placeholder="Your name" autocomplete="nickname">
+      <button class="btn primary" id="seatBtn" type="submit">Sit down</button>
+    </div>
+  </form>
+
+  <form class="panel stack" id="joinForm" hidden>
+    <div><h2>Have a table code?</h2><p>Paste the invite link in your browser, or type the 5-letter code here.</p></div>
+    <div class="row"><input type="text" class="code" id="codeInput" maxlength="5" placeholder="ABC12" autocomplete="off"><button class="btn" type="submit">Join table</button></div>
+  </form>
+
+  <main id="view" class="stack"></main>
+
+  <details class="rules">
+    <summary>Rules at a glance</summary>
+    <div class="vals"><span>A = 1</span><span>2–10 face value</span><span>J Q K = 10</span><span>Red K = −1</span><span>Joker = 0</span></div>
+    <ul>
+      <li>Everyone gets 4 face-down cards in a square and may look at their bottom two once.</li>
+      <li>On your turn, draw from the deck or take the top discard. Then swap it with one of your cards (the old one is discarded unseen) or discard it.</li>
+      <li>Discarding a drawn card uses its power: 7–8 look at one of yours, 9–10 look at an opponent's, J blind-swap any two, Q swap one of yours with another and see what you got, K look at any two and choose whether to swap.</li>
+      <li>Snap: when the top discard matches a card on the table, tap Snap and then that card. A wrong card costs you a penalty card. Snap someone else's card and you may hand them one of yours.</li>
+      <li>Call KABOO at the start of your turn when you think you have 3 or fewer points. Everyone else gets one last turn and may call Counter-KABOO instead to try to beat you. Running out of cards calls KABOO automatically.</li>
+      <li>Lowest total wins and scores 0. Everyone else scores their cards. A KABOO or Counter-KABOO caller who doesn't win takes +20. A caller who only ties does not win.</li>
+    </ul>
+  </details>
+</div>
+
+<script>
+(function(){
+'use strict';
+var $=function(s){return document.querySelector(s)};
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function clean(s){return String(s||'').replace(/[\u0000-\u001f\u007f-\u009f]/g,'').trim().slice(0,14)}
+var store={get:function(k){try{return localStorage.getItem(k)}catch(e){return null}},set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+function rid(n){var a='abcdefghijkmnpqrstuvwxyz23456789',s='',b=crypto.getRandomValues(new Uint8Array(n));for(var i=0;i<b.length;i++)s+=a[b[i]%a.length];return s}
+
+var SUIT={S:'♠',H:'♥',D:'♦',C:'♣'};
+function rk(c){return c[0]==='T'?'10':c[0]==='X'?'JK':c[0]}
+function lbl(c){return c[0]==='X'?'Joker':rk(c)+SUIT[c[1]]}
+function val(c){var r=c[0];if(r==='X')return 0;if(r==='A')return 1;if(r==='T'||r==='J'||r==='Q')return 10;if(r==='K')return(c[1]==='H'||c[1]==='D')?-1:10;return +r}
+function isRed(c){return c[1]==='H'||c[1]==='D'}
+var EFF={own:'look at one of their cards',opp:"look at an opponent's card",jack:'blind swap',queen:'swap and look',king:'look at two, maybe swap'};
+var POWER={own:'look at one of your own cards',opp:"look at one opponent's card",jack:'swap any two cards without looking',queen:'swap one of your cards with another player\'s and see the one you get',king:'look at any two cards, then choose whether to swap them'};
+function effKind(c){var r=c[0];if(r==='7'||r==='8')return'own';if(r==='9'||r==='T')return'opp';if(r==='J')return'jack';if(r==='Q')return'queen';if(r==='K')return'king';return null}
+function slotName(i){return['top-left','top-right','bottom-left','bottom-right'][i]||('extra card '+(i-3))}
+
+var pid=store.get('kaboo.pid');if(!pid||!/^[a-z0-9]{16,40}$/.test(pid)){pid=rid(24);store.set('kaboo.pid',pid)}
+var myName=clean(store.get('kaboo.name')||'');
+var m=location.pathname.match(/^\/t\/([A-Za-z0-9]{3,8})/);
+var code=m?m[1].toUpperCase():null;
+var S=null,ws=null,status='connecting',err=null,retry=0,pendingCreate=false;
+var ui={sel:[],snap:false,key:'',mem:false};
+var EYE='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+
+/* ---------- connection ---------- */
+function connect(){
+  status='connecting';render();
+  ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');
+  ws.onopen=function(){status='live';retry=0;if(pendingCreate){ws.send(JSON.stringify(pendingCreate));pendingCreate=null}else if(code)ws.send(JSON.stringify({type:'hello',pid:pid,table:code}));render()};
+  ws.onmessage=function(e){
+    var msg;try{msg=JSON.parse(e.data)}catch(x){return}
+    if(msg.type==='state'){
+      S=msg.s;err=null;
+      if(msg.code&&msg.code!==code){code=msg.code;history.replaceState(null,'','/t/'+code)}
+      render();
+    }else if(msg.type==='error'){err=msg;S=null;render()}
+  };
+  ws.onclose=function(){status='offline';render();setTimeout(connect,Math.min(1000*Math.pow(2,retry++),10000))};
+}
+function sendRaw(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
+function send(a){sendRaw({type:'act',a:a})}
+setInterval(function(){sendRaw({type:'ping'})},30000);
+
+/* ---------- view helpers ---------- */
+function me(){return S?S.me:-1}
+function nm(i){return S&&S.pl[i]?S.pl[i].nm:'?'}
+function amHost(){return me()>=0&&S.pl[me()].host}
+function inList(list,p,i){return(list||[]).some(function(s){return s&&s[0]===p&&s[1]===i})}
+function canSnap(){return me()>=0&&S.ph==='play'&&S.dpn>0&&!S.sg}
+function clickable(p,i,c){
+  var mi=me();if(mi<0||S.ph!=='play')return false;
+  if(ui.snap)return !!c;
+  if(S.sg&&S.sg.by===mi)return p===mi&&!!c;
+  if(mi!==S.tn)return false;
+  if(S.st==='drawn')return p===mi;
+  if(S.st==='eff'){if(!c)return false;var k=S.ef.k;if(k==='own')return p===mi;if(k==='opp')return p!==mi;return true}
+  return false;
+}
+function cardHTML(c,o){
+  o=o||{};var cls='card',attrs='';
+  if(o.slot)attrs+=' data-p="'+o.slot[0]+'" data-i="'+o.slot[1]+'"';
+  if(o.click){cls+=' click';attrs+=' data-slot="1"'}
+  if(o.sel)cls+=' sel';else if(o.hl)cls+=' hl';
+  var isBtn=!!o.click,tag=isBtn?'button type="button"':'div',end=isBtn?'button':'div';
+  var aria=' aria-label="'+esc(o.label||'')+'"';
+  if(!c)return'<'+tag+' class="'+cls+' empty"'+attrs+aria+'></'+end+'>';
+  if(c==='B')return'<'+tag+' class="'+cls+' back"'+attrs+aria+'><b>K</b></'+end+'>';
+  return'<'+tag+' class="'+cls+' face'+(isRed(c)?' red':'')+(o.memo?' memo':'')+'"'+attrs+' aria-label="'+esc(lbl(c))+'"><span class="r">'+rk(c)+'</span><span class="s">'+(c[0]==='X'?'★':SUIT[c[1]])+'</span><span class="r b">'+rk(c)+'</span>'+(o.val?'<span class="v">'+val(c)+'</span>':'')+'</'+end+'>';
+}
+function memMap(){var m={};if(ui.mem&&S.op.mem)(S.mem||[]).forEach(function(x){m[x[0]+':'+x[1]]=x[2]});return m}
+function handHTML(p){
+  var P=S.pl[p],mm=memMap();
+  return'<div class="hand">'+P.c.map(function(c,i){
+    var memo=c==='B'&&mm[p+':'+i];
+    return cardHTML(memo||c,{memo:!!memo,slot:[p,i],click:clickable(p,i,c),sel:inList(ui.sel,p,i)||(S.st==='king'&&S.ef&&inList(S.ef.s,p,i)),hl:inList(S.hl,p,i),val:S.ph==='end',label:P.nm+' '+slotName(i)});
+  }).join('')+'</div>';
+}
+function seatHTML(p,mine){
+  var P=S.pl[p],tags='';
+  if(P.host)tags+='<span class="tag">Host</span>';
+  if(S.kb&&S.kb.by===p)tags+='<span class="tag red">Kaboo</span>';
+  if(S.kb&&S.kb.ctr.indexOf(p)>=0)tags+='<span class="tag red">Counter</span>';
+  if(S.ph==='peek'&&P.r)tags+='<span class="tag">Ready</span>';
+  if(mine&&S.op.mem&&S.ph==='play')tags+='<button class="btn eye'+(ui.mem?' on':'')+'" data-act="mem" aria-pressed="'+(ui.mem?'true':'false')+'" title="Show the cards you have seen">'+EYE+(ui.mem?'Hide':'Seen')+'</button>';
+  return'<section class="seat'+(mine?' mine':'')+(S.ph==='play'&&S.tn===p?' turn':'')+'"><div class="who"><span class="dot'+(P.on?'':' away')+'"></span><span class="n">'+esc(P.nm)+(mine?' (you)':'')+'</span>'+tags+'<span class="pts">'+P.s+' pts</span></div>'+handHTML(p)+'</section>';
+}
+function logHTML(){return'<ol class="log" aria-live="polite">'+(S.lg||[]).map(function(x){return'<li>'+esc(x)+'</li>'}).join('')+'</ol>'}
+function inviteURL(){return location.origin+'/t/'+code}
+
+/* ---------- render ---------- */
+function render(){
+  var st=$('#status');
+  st.textContent=status==='live'?'Live':status==='offline'?'Reconnecting':'Connecting';
+  st.className='chip'+(status==='live'?' live':status==='offline'?' off':'');
+  $('#tableChip').hidden=!code;if(code)$('#tableChip').textContent='Table '+code;
+  $('#round').hidden=!(S&&S.rd);if(S&&S.rd)$('#round').textContent='Round '+S.rd;
+  var view=$('#view'),sf=$('#seatForm'),jf=$('#joinForm'),ni=$('#nameInput');
+  if(document.activeElement!==ni&&!ni.value)ni.value=myName;
+  if(S){var key=S.rd+'-'+S.tn+'-'+S.st+'-'+S.ph;if(key!==ui.key){ui.key=key;ui.sel=[]}if(!canSnap())ui.snap=false}
+
+  if(!code||(err&&err.code==='no_table')){
+    sf.hidden=false;jf.hidden=false;
+    $('#seatTitle').textContent='Open a table';
+    $('#seatSub').textContent=err?err.msg:'Kaboo for 2 to 8 players. Open a table, then send the invite link to your friends.';
+    $('#seatBtn').textContent='Open a table';
+    view.innerHTML='';return;
+  }
+  jf.hidden=true;
+  if(!S){sf.hidden=true;view.innerHTML='<div class="panel"><h2>Joining table '+esc(code)+'…</h2><p>'+(status==='offline'?'Cannot reach the server. Retrying.':'Connecting to the game server. A free host can take up to a minute to wake up.')+'</p></div>';return}
+  var mi=me();
+  sf.hidden=!(mi<0&&(S.ph==='lobby'||S.ph==='end')&&S.pl.length<8);
+  $('#seatTitle').textContent='Take a seat';
+  $('#seatSub').textContent=S.ph==='end'?'You will be dealt in next round.':'Pick a name the other players will see.';
+  $('#seatBtn').textContent='Sit down';
+  if(S.ph==='lobby'){view.innerHTML=lobbyHTML();view.classList.remove('snapmode');return}
+  view.innerHTML=tableHTML();
+  view.classList.toggle('snapmode',ui.snap);
+}
+function lobbyHTML(){
+  var mi=me(),host=amHost();
+  var seats='<ul class="seats">'+S.pl.map(function(p){return'<li><span class="dot'+(p.on?'':' away')+'"></span><span class="n">'+esc(p.nm)+'</span>'+(p.host?'<span class="tag gold">Host</span>':'')+(p.me?'<span class="tag">You</span>':'')+'</li>'}).join('')+'</ul>';
+  var h='<div class="panel stack"><div><h2>Invite your friends</h2><p>Send this link. Anyone who opens it can sit down.</p></div><div class="row"><span class="link" id="inviteLink">'+esc(inviteURL())+'</span><button class="btn" data-act="copy">Copy link</button></div></div>';
+  h+='<div class="panel stack"><div><h2>Waiting for players</h2><p>Kaboo needs 2 to 8 players. '+S.pl.length+' seated.</p></div>'+seats;
+  if(host){
+    h+='<div class="stack"><label class="tog"><input type="checkbox" id="optJk"'+(S.op.jk?' checked':'')+'><span>Play with jokers<small>Two jokers in the deck, worth 0 each.</small></span></label>'+
+      '<label class="tog"><input type="checkbox" id="optPr"'+(S.op.pr?' checked':'')+'><span>Matt\'s pairs rule<small>A pair of matching cards scores 0 at the end, except the red kings.</small></span></label>'+
+      '<label class="tog"><input type="checkbox" id="optMem"'+(S.op.mem?' checked':'')+'><span>Memory aid<small>A "Seen" button shows the cards you have looked at, following them when they get swapped. Easier than the real rules.</small></span></label></div>'+
+      '<div class="row"><button class="btn primary" data-act="start"'+(S.pl.length<2?' disabled':'')+'>Deal round 1</button>'+(S.pl.length<2?'<span style="color:var(--muted)">Waiting for at least one more player.</span>':'')+'</div>';
+  }else if(mi>=0){
+    h+='<div class="row"><span style="color:var(--muted)">The host deals when everyone is here.'+(S.op.jk?' Jokers on.':'')+(S.op.pr?' Pairs rule on.':'')+(S.op.mem?' Memory aid on.':'')+'</span><button class="btn" data-act="leave">Leave seat</button></div>';
+  }
+  return h+'</div>'+logHTML();
+}
+function tableHTML(){
+  var mi=me(),n=S.pl.length,order=[];
+  for(var k=1;k<=n;k++){var p=mi>=0?(mi+k)%n:k-1;if(p!==mi)order.push(p)}
+  var h='';
+  if(S.kb&&S.ph==='play')h+='<div class="kbanner">'+esc(nm(S.kb.by))+(S.kb.auto?' ran out of cards: ':' called ')+'KABOO · '+S.kb.left+' turn'+(S.kb.left===1?'':'s')+' left</div>';
+  h+='<div class="opps">'+order.map(function(p){return seatHTML(p,false)}).join('')+'</div>';
+  h+='<div class="center"><div class="pile"><div class="stackc">'+cardHTML(S.dkn?'B':null,{label:'Draw pile'})+'</div>Deck · '+S.dkn+'</div>'+
+    (S.dr?'<div class="pile"><div>'+cardHTML(S.dr,{label:'Drawn card'})+'</div>'+esc(nm(S.tn))+'\'s hand</div>':'')+
+    '<div class="pile"><div class="stackc">'+cardHTML(S.top,{label:'Discard pile',sel:ui.snap})+'</div>'+(canSnap()?'<button class="btn'+(ui.snap?' primary':'')+'" data-act="snap" style="padding:6px 12px">'+(ui.snap?'Pick a card':'Snap!')+'</button>':'Discard · '+S.dpn)+'</div></div>';
+  if(mi>=0)h+=seatHTML(mi,true);else h+='<div class="panel"><p>You are watching this round. You can sit down when it ends.</p></div>';
+  h+=S.ph==='end'?resultsHTML():barHTML();
+  return h+logHTML();
+}
+function resultsHTML(){
+  var host=amHost();
+  var rows=S.pl.map(function(p,i){var r=S.res&&S.res[i];if(!r)return'<tr><td>'+esc(p.nm)+'</td><td class="num">–</td><td class="num">–</td><td class="num">'+p.s+'</td></tr>';
+    return'<tr'+(r.w?' class="win"':'')+'><td>'+esc(p.nm)+(r.w?' · wins':'')+(r.k?' · called':'')+'</td><td class="num">'+r.t+'</td><td class="num">+'+r.a+'</td><td class="num">'+p.s+'</td></tr>'}).join('');
+  return'<div class="panel stack"><h2>Round '+S.rd+' results</h2><div class="tablewrap"><table class="results"><thead><tr><th>Player</th><th class="num">Cards</th><th class="num">Scored</th><th class="num">Total</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    (host?'<div class="row"><button class="btn primary" data-act="next">Deal round '+(S.rd+1)+'</button><button class="btn" data-act="reset">New game</button></div>':'<p>Waiting for the host to deal the next round.</p>')+
+    (me()>=0&&!host?'<div class="row"><button class="btn" data-act="leave">Leave table</button></div>':'')+'</div>';
+}
+function queenOk(){var mi=me();return ui.sel.length===2&&ui.sel.some(function(s){return s[0]===mi})&&ui.sel.some(function(s){return s[0]!==mi})}
+function barHTML(){
+  var mi=me(),P=mi>=0?S.pl[mi]:null,msg='',btns='',host=amHost();
+  if(S.ph==='peek'){
+    if(!P)msg='Players are looking at their bottom cards.';
+    else if(!P.r){if(S.pk){msg='Memorise your two bottom cards. You will not see them again.';btns='<button class="btn primary" data-act="ready">Got them, hide my cards</button>'}else{msg='Look at your two bottom cards. You get one look.';btns='<button class="btn primary" data-act="peek">Look at bottom cards</button>'}}
+    else msg='Waiting for '+S.pl.filter(function(p){return!p.r}).map(function(p){return esc(p.nm)}).join(', ')+'.';
+  }else{
+    var mine=mi===S.tn,cur=esc(nm(S.tn)),k=S.ef&&S.ef.k;
+    if(ui.snap){msg='Tap a card that matches the <em>'+lbl(S.top)+'</em> on the discard pile. A wrong card gets you a penalty card.';btns='<button class="btn" data-act="snapcancel">Cancel</button>'}
+    else if(S.sg&&S.sg.by===mi){msg='You snapped '+esc(nm(S.sg.p))+'\'s card. Tap one of your cards to put in their empty spot, or keep yours.';btns='<button class="btn" data-act="nogive">Keep my cards</button>'}
+    else if(mine){
+      if(S.st==='start'){
+        msg=S.kb?'<em>'+esc(nm(S.kb.by))+' called KABOO.</em> This is your last turn.':'<em>Your turn.</em> Draw a card.';
+        btns='<button class="btn primary" data-act="draw">Draw from deck</button>';
+        if(S.top)btns+='<button class="btn" data-act="take">Take '+lbl(S.top)+'</button>';
+        if(!S.kb)btns+='<button class="btn kaboo" data-act="kaboo">KABOO</button>';
+        else if(S.kb.by!==mi&&S.kb.ctr.indexOf(mi)<0)btns+='<button class="btn kaboo" data-act="counter">Counter-KABOO</button>';
+      }else if(S.st==='drawn'){
+        if(S.df==='d'){
+          var ek=effKind(S.dr);
+          if(ek){msg='You drew <em>'+lbl(S.dr)+'</em>. Use its power: '+POWER[ek]+'. Or keep it by tapping one of your cards to replace (no power then).';btns='<button class="btn primary" data-act="disc">Use power</button>'}
+          else{msg='You drew <em>'+lbl(S.dr)+'</em>. Tap one of your cards to replace it with this, or discard it.';btns='<button class="btn primary" data-act="disc">Discard '+lbl(S.dr)+'</button>'}
+        }
+        else msg='Tap one of your cards to replace it with the <em>'+lbl(S.dr)+'</em>. Cards taken from the discard pile have no power.';
+      }else if(S.st==='eff'){
+        var cnt=ui.sel.length;
+        if(k==='own')msg='Tap one of your cards to look at it.';
+        else if(k==='opp')msg='Tap an opponent\'s card to look at it.';
+        else if(k==='jack'){msg='Pick any two cards to swap without looking ('+cnt+'/2).';btns='<button class="btn primary" data-act="effgo"'+(cnt<2?' disabled':'')+'>Swap them</button>'}
+        else if(k==='queen'){msg='Pick one of your cards and one other card to swap. You will see the card you get ('+cnt+'/2).';btns='<button class="btn primary" data-act="effgo"'+(!queenOk()?' disabled':'')+'>Swap them</button>'}
+        else if(k==='king'){msg='Pick any two cards to look at ('+cnt+'/2).';btns='<button class="btn primary" data-act="effgo"'+(cnt<2?' disabled':'')+'>Look</button>'}
+        btns+='<button class="btn" data-act="skip">Skip power</button>';
+      }else if(S.st==='look'){msg='Remember this card.';btns='<button class="btn primary" data-act="done">Done, end my turn</button>'}
+      else if(S.st==='king'){msg='Swap these two cards? Everyone will see what you choose.';btns='<button class="btn primary" data-act="kyes">Swap</button><button class="btn" data-act="kno">Don\'t swap</button>'}
+    }else{
+      var verb={start:'is taking their turn',drawn:S.df==='p'?'is placing the '+(S.dr&&S.dr!=='B'?lbl(S.dr):'card')+' from the discard pile':'drew from the deck',eff:'is using a power: '+(S.ef?EFF[S.ef.k]:''),look:'is looking at a card',king:'is deciding whether to swap'}[S.st]||'is playing';
+      msg='<em>'+cur+'</em> '+verb+'.';
+      if(P&&canSnap())msg+=' Spot a match on the discard pile? Snap it.';
+    }
+    if(host&&S.pl[S.tn]&&!S.pl[S.tn].on)btns+='<button class="btn" data-act="skipturn">Skip '+cur+'\'s turn (away)</button>';
+  }
+  return'<div class="bar"><div class="msg">'+msg+'</div>'+(btns?'<div class="row">'+btns+'</div>':'')+'</div>';
+}
+
+/* ---------- input ---------- */
+function slotClick(p,i){
+  var mi=me();if(!S||mi<0)return;
+  var c=S.pl[p]&&S.pl[p].c[i];
+  if(!clickable(p,i,c))return;
+  if(ui.snap){ui.snap=false;send({t:'snap',p:p,i:i});render();return}
+  if(S.sg&&S.sg.by===mi){send({t:'give',i:i});return}
+  if(S.st==='drawn'){send({t:'swap',i:i});return}
+  if(S.st==='eff'){
+    var k=S.ef.k;
+    if(k==='own'||k==='opp'){send({t:'eff',sel:[[p,i]]});return}
+    var at=ui.sel.findIndex(function(s){return s[0]===p&&s[1]===i});
+    if(at>=0)ui.sel.splice(at,1);
+    else{if(k==='queen'){var mineSel=p===mi;ui.sel=ui.sel.filter(function(s){return(s[0]===mi)!==mineSel})}ui.sel.push([p,i]);if(ui.sel.length>2)ui.sel.shift()}
+    render();
+  }
+}
+document.addEventListener('click',function(e){
+  var slot=e.target.closest('[data-slot]');
+  if(slot){slotClick(+slot.dataset.p,+slot.dataset.i);return}
+  var b=e.target.closest('[data-act]');if(!b||b.disabled)return;
+  var a=b.dataset.act;
+  var simple={start:1,next:1,reset:1,leave:1,peek:1,ready:1,draw:1,take:1,disc:1,kaboo:1,counter:1,skip:1,done:1,nogive:1};
+  if(simple[a]){send({t:a});return}
+  switch(a){
+    case 'kyes':send({t:'kswap',yes:1});break;
+    case 'kno':send({t:'kswap',yes:0});break;
+    case 'effgo':send({t:'eff',sel:ui.sel.slice()});ui.sel=[];break;
+    case 'snap':if(canSnap()){ui.snap=!ui.snap;render()}break;
+    case 'snapcancel':ui.snap=false;render();break;
+    case 'mem':ui.mem=!ui.mem;render();break;
+    case 'skipturn':send({t:'skipturn',tn:S.tn});break;
+    case 'copy':
+      var url=inviteURL();
+      if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(url).then(function(){b.textContent='Copied'},function(){selectLink()});else selectLink();
+      break;
+  }
+});
+function selectLink(){var el=$('#inviteLink');if(!el)return;var r=document.createRange();r.selectNodeContents(el);var s=getSelection();s.removeAllRanges();s.addRange(r)}
+document.addEventListener('change',function(e){if(/^opt(Jk|Pr|Mem)$/.test(e.target.id))send({t:'opts',jk:$('#optJk').checked,pr:$('#optPr').checked,mem:$('#optMem').checked})});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&ui.snap){ui.snap=false;render()}});
+$('#seatForm').addEventListener('submit',function(e){
+  e.preventDefault();var n=clean($('#nameInput').value);if(!n){$('#nameInput').focus();return}
+  myName=n;store.set('kaboo.name',n);
+  if(!code||(err&&err.code==='no_table')){err=null;code=null;pendingCreate={type:'hello',pid:pid,create:true,nm:n};if(ws&&ws.readyState===1){sendRaw(pendingCreate);pendingCreate=null}return}
+  send({t:'join',nm:n});
+});
+$('#joinForm').addEventListener('submit',function(e){
+  e.preventDefault();var c=$('#codeInput').value.trim().toUpperCase();if(!/^[A-Z0-9]{3,8}$/.test(c))return;
+  location.href='/t/'+c;
+});
+connect();
+})();
+</script>
+</body>
+</html>

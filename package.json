@@ -1,0 +1,17 @@
+{
+  "name": "kaboo",
+  "version": "1.0.0",
+  "description": "Kaboo, the memory card game, for 2 to 8 players in the browser.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "8.18.0"
+  },
+  "license": "MIT"
+}
